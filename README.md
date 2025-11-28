@@ -6,7 +6,7 @@ This project will extract the data from Reddit and send to Kafka.
 
 **Step 1**. install all the packages using requirements.txt
 
-`pip install requirements.txt`
+`pip install -r requirements.txt`
 
 **Step 2**. Create a kafka topic on Confluent Cloud.  
 **Step 3**. Create your reddit client id and and client secret from reddit website.  
