@@ -4,9 +4,7 @@ import json
 from kafka import KafkaProducer
 import os
 from dotenv import load_dotenv
-import Reddit_ETL_Project.encryption as encryption
-import Reddit_ETL_Project.decryption as decryption
-
+from typing import Dict, Any
 
 # loading the environment to the code
 load_dotenv()
@@ -42,68 +40,47 @@ data ={}
 #===========================================================================
 # Retreiving all the required data from subreddit using PRAW
 #===========================================================================
-for submission in reddit.subreddit(os.getenv('SUBREDDIT_NAME')).new(limit=1):
+try:
+    subreddit = reddit.subreddit(os.getenv('SUBREDDIT_NAME'))
+    for submission in subreddit.stream.submissions():
 
-    submission.comments.replace_more(limit=0) # loading all teh comments
+        submission.comments.replace_more(limit=0) # loading all the comments
 
-    data = {
-    'postAuthor' : submission.author.name,
-    'postComments' : [comment.body for comment in list(submission.comments)], # listing all the comments in list
-    'isEdited' : submission.edited,
-    'postId' : submission.id,
-    'numberOfComments' : submission.num_comments,
-    'isNSFW' : submission.over_18,
-    'postScore' : submission.score,
-    'isSpoiler' : submission.spoiler,
-    'postTitle' : submission.title,
-    'postUpvoteRatio' : submission.upvote_ratio,
-    'postContent' : submission.selftext
-    }
+        data: Dict[str,Any] = {
+        'postAuthor' : submission.author.name,
+        'postComments' : [comment.body for comment in list(submission.comments)], # listing all the comments in list
+        'isEdited' : submission.edited,
+        'postId' : submission.id,
+        'numberOfComments' : submission.num_comments,
+        'isNSFW' : submission.over_18,
+        'postScore' : submission.score,
+        'isSpoiler' : submission.spoiler,
+        'postTitle' : submission.title,
+        'postUpvoteRatio' : submission.upvote_ratio,
+        'postContent' : submission.selftext
+        }
 
-#===========================================================================
-# defining key for partitioning in kafka topic and value for kafka messages
-#===========================================================================
-key = data['postId']
-value = data
-
-#===========================================================================
-# Decrypting the last seen id file
-#===========================================================================
-decryption.decryptFile(os.getenv('LAST_SEEN_ID_FILE')) # Decrypting the last seen id file
-
-
-#================================================================================
-# Read the data from decrypted file and forma a list of all the ids already seen
-#================================================================================
-with open(os.getenv('LAST_SEEN_ID_FILE'),'r') as id_file:
-    
-    post_ids = id_file.read()
-    print(post_ids)
-    post_ids_list = list(post_ids.split('\n'))
-    print(post_ids_list)
-
-
-#================================================================================
-# Compare the ids from list and if not present in the list the produce the 
-# respective values to kafka
-#================================================================================
-if key not in post_ids_list:
-    with open(os.getenv('LAST_SEEN_ID_FILE'),'a') as id_file:
-        try:
-            producer.send('redditTopic',key=key,value=value)
-            id_file.write(f"\n{key}")
-            print("new messqage added",key)
-        except Exception as e:                                # Raise Exceptions if any
-            raise Exception(e,'Error occured')
+    #===========================================================================
+    # defining key for partitioning in kafka topic and value for kafka messages
+    #===========================================================================
+        key = data['postId']
+        value = data
+        print(data)
         
-#===========================================================================
-# Encrypting the last seen id file
-#===========================================================================
-    encryption.encryptFile(os.getenv('LAST_SEEN_ID_FILE'))
-else:
-    print('no new post')
-    encryption.encryptFile(os.getenv('LAST_SEEN_ID_FILE'))
-
-
-producer.flush()
-producer.close()
+        try:
+        #===========================================================================
+        # Send to Kafka immediately using producer
+        #===========================================================================
+            producer.send('redditTopic', key=key, value=value)
+            print(f"Sent post: {data['postId']}")
+                    
+        except Exception as e:
+            print(f"Error processing post {getattr(submission, 'id', 'unknown')}: {e}")
+            continue
+            
+except KeyboardInterrupt:
+    print("Stream interrupted")
+finally:
+    producer.flush()
+    producer.close()
+    print("Producer closed")
